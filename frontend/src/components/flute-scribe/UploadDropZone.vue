@@ -2,14 +2,61 @@
 import { ref, computed } from 'vue'
 import { Upload, Music, FileMusic, X } from 'lucide-vue-next'
 
+const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024 // 200 MB
+
+const props = defineProps<{
+  accept: string
+  description: string
+  hint: string
+}>()
+
+const emit = defineEmits<{
+  'update:file': [file: File | null]
+}>()
+
 const isDragging = ref(false)
 const file = ref<File | null>(null)
 const inputRef = ref<HTMLInputElement | null>(null)
+const validationError = ref<string | null>(null)
 
 const fileSizeMB = computed(() => {
   if (!file.value) return ''
   return (file.value.size / (1024 * 1024)).toFixed(2)
 })
+
+/**
+ * Derive allowed extensions from the props.accept string.
+ * e.g. "audio/*, .mid, .midi" -> ['.mp3', '.wav', '.flac', '.ogg', '.mid', '.midi', ...]
+ * For "audio/*" we allow all common audio extensions as a whitelist.
+ */
+function getAllowedExtensions(): string[] {
+  const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.ogg', '.aac', '.m4a', '.wma', '.opus']
+  const parts = props.accept.split(',').map((s) => s.trim().toLowerCase())
+  const extensions: string[] = []
+  for (const part of parts) {
+    if (part === 'audio/*') {
+      extensions.push(...AUDIO_EXTENSIONS)
+    } else if (part.startsWith('.')) {
+      extensions.push(part)
+    }
+  }
+  return extensions
+}
+
+function validateFile(candidate: File): string | null {
+  const allowedExtensions = getAllowedExtensions()
+  const fileName = candidate.name.toLowerCase()
+  const hasValidExtension = allowedExtensions.some((ext) => fileName.endsWith(ext))
+  const hasValidMimeType = candidate.type.startsWith('audio/')
+
+  if (!hasValidExtension && !hasValidMimeType) {
+    return `不支援的檔案格式。支援格式：${allowedExtensions.join(', ')}`
+  }
+  if (candidate.size > MAX_FILE_SIZE_BYTES) {
+    return `檔案過大（${(candidate.size / (1024 * 1024)).toFixed(1)} MB），上限為 200 MB`
+  }
+  return null
+}
 
 function handleDragOver(e: DragEvent) {
   e.preventDefault()
@@ -29,25 +76,42 @@ function handleDrop(e: DragEvent) {
   isDragging.value = false
 
   const droppedFile = e.dataTransfer?.files[0]
-  if (droppedFile && droppedFile.type.startsWith('audio/')) {
-    file.value = droppedFile
+  if (!droppedFile) return
+
+  const error = validateFile(droppedFile)
+  if (error) {
+    validationError.value = error
+    return
   }
+  validationError.value = null
+  file.value = droppedFile
+  emit('update:file', file.value)
 }
 
 function handleFileChange(e: Event) {
   const target = e.target as HTMLInputElement
   const selectedFile = target.files?.[0]
-  if (selectedFile) {
-    file.value = selectedFile
+  if (!selectedFile) return
+
+  const error = validateFile(selectedFile)
+  if (error) {
+    validationError.value = error
+    target.value = ''
+    return
   }
+  validationError.value = null
+  file.value = selectedFile
+  emit('update:file', file.value)
 }
 
 function clearFile(e: Event) {
   e.stopPropagation()
   file.value = null
+  validationError.value = null
   if (inputRef.value) {
     inputRef.value.value = ''
   }
+  emit('update:file', null)
 }
 
 function openFilePicker() {
@@ -71,8 +135,9 @@ const dropZoneClass = computed(() => {
 </script>
 
 <template>
+  <div class="flex flex-col gap-2">
   <div
-    :class="['sketch-dashed transition-all duration-200 cursor-pointer', dropZoneClass]"
+    :class="['sketch-dashed transition-all duration-200 cursor-pointer', dropZoneClass, validationError ? 'border-destructive' : '']"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
@@ -85,7 +150,7 @@ const dropZoneClass = computed(() => {
     <input
       ref="inputRef"
       type="file"
-      accept="audio/*"
+      :accept="props.accept"
       class="hidden"
       @change="handleFileChange"
       aria-hidden="true"
@@ -127,13 +192,13 @@ const dropZoneClass = computed(() => {
       </div>
       <div class="text-center">
         <p class="text-foreground text-2xl md:text-3xl">
-          Drop your audio here to transcribe
+          {{ props.description }}
         </p>
         <p class="text-muted-foreground text-lg mt-1">
           or click to browse your files
         </p>
         <p class="text-muted-foreground/60 text-base mt-2">
-          Supports MP3, WAV, FLAC, OGG
+          {{ props.hint }}
         </p>
       </div>
     </div>
@@ -147,5 +212,11 @@ const dropZoneClass = computed(() => {
         </filter>
       </defs>
     </svg>
+  </div>
+
+  <!-- Validation error message -->
+  <p v-if="validationError" class="text-destructive text-base px-1" role="alert">
+    {{ validationError }}
+  </p>
   </div>
 </template>
