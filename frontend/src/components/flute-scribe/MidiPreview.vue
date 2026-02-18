@@ -5,16 +5,16 @@ const props = defineProps<{
   noteCount: number
   duration: string
   tempo: number
-  timeSignature: string
-  keySignature: string
+}>()
+
+const emit = defineEmits<{
+  download: []
 }>()
 
 const infoFields = [
   { label: '音符數量', getValue: () => String(props.noteCount) },
   { label: '時長', getValue: () => props.duration },
   { label: '節拍 BPM', getValue: () => String(props.tempo) },
-  { label: '拍號', getValue: () => props.timeSignature },
-  { label: '調性', getValue: () => props.keySignature },
 ]
 </script>
 
@@ -30,7 +30,10 @@ const infoFields = [
     </div>
 
     <div class="mt-4">
-      <button class="sketch-border px-6 py-3 bg-primary text-primary-foreground text-lg flex items-center gap-2 hover:bg-primary/90 transition-colors">
+      <button
+        class="sketch-border px-6 py-3 bg-primary text-primary-foreground text-lg flex items-center gap-2 hover:bg-primary/90 transition-colors"
+        @click="emit('download')"
+      >
         <Download class="w-5 h-5" :stroke-width="1.5" />
         下載 MIDI 檔案
       </button>
